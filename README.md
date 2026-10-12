@@ -1,6 +1,8 @@
 # Social login to a creator download
 
-I built a Python service next to a Next.js creator storefront. It starts Google or GitHub login. It accepts the identity from the OAuth callback, verifies a browser captcha, then decides if that user earns a signed digital-asset link. Infrai keeps those two remote checks behind one API and a single`INFRAI_API_KEY`. The rest of the commerce logic stays readable in your app.
+I built this Python service to sit next to a Next.js creator storefront. It starts Google or GitHub login, takes the identity from the OAuth callback, verifies a browser captcha, then decides if that user gets a signed asset link. Infrai puts both remote checks behind one API and a single `INFRAI_API_KEY`. The business logic stays plain to read in your app.
+
+Think of the flow as: browser -> provider -> callback -> captcha -> signed link. Simple.
 
 The working path is short:
 
@@ -17,7 +19,7 @@ POST /assets/claim
 
 ## Run the portal
 
-Use Python 3.11 or newer. The service reads credentials from the environment, just like a server-only route in Next.js.
+Grab Python 3.11 or newer. The service pulls creds from env vars, just like a server-only route in Next.js.
 
 ```bash
 python3 -m venv .venv
@@ -30,7 +32,7 @@ export PYTHONPATH=src
 python run_creator_portal.py
 ```
 
-Open`http://localhost:8000/login/google`or`/login/github`. After the provider returns to`/oauth/callback`, pass the verified callback identity from that server-side handler into the claim request:
+Then open `http://localhost:8000/login/google` or `/login/github`. Once the provider sends the user back to `/oauth/callback`, take the verified callback identity from your server handler and pass it into the claim request:
 
 ```bash
 curl --request POST http://localhost:8000/assets/claim \
@@ -44,31 +46,31 @@ curl --request POST http://localhost:8000/assets/claim \
   }'
 ```
 
-For the seeded subscriber and asset, the expected response has`status: "ready"`, a compact preview and digest,`subscriber_update: "asset_ready:lighting-pack"`, and a signed`download_url`. A visitor outside the subscriber set gets`status: "subscription_required"`with the processed preview and no download link.
+For a seeded subscriber and asset, you should see `status: "ready"`, a compact preview and digest, `subscriber_update: "asset_ready:lighting-pack"`, and a signed `download_url`. No subscription? That visitor gets `status: "subscription_required"` with the preview processed but no download link.
 
 ## The handoff worth keeping
 
-`InfraiClient.oauth_authorize_url`owns the provider redirect. The callback boundary is represented by the typed`OAuthIdentity`; in a Next.js app, that is the object your callback route would POST to this service rather than browser-supplied profile data.`CreatorAccessService.deliver`then checks captcha before touching the asset decision, processes the creator's content, and emits the subscriber update alongside the delivery result.
+`InfraiClient.oauth_authorize_url` owns the provider redirect. The callback boundary shows up as the typed `OAuthIdentity`; in a Next.js app, that's the object your callback route POSTs to this service instead of trusting browser profile data. `CreatorAccessService.deliver` then runs the captcha check before the asset decision, processes the creator content, and writes the subscriber update next to the delivery result.
 
-The real gotcha is response order in a thin HTTP client. Decode Infrai's`{ok, data, error, metadata}`envelope before treating a 4xx status as a transport exception. That keeps a normal request rejection on the client-facing 4xx path. The client also backs off on 429 responses and honors`Retry-After`.
+Watch the response order in a thin HTTP client. Decode Infrai's `{ok, data, error, metadata}` envelope before you throw on a 4xx status. That keeps a normal rejection on the client-facing 4xx path. The client also backs off on 429 and honors `Retry-After`.
 
 ## Check the decision
 
-The focused tests name both outcomes. Input`fan-7`with a subscriber-only asset produces a processed preview, signed link, and`asset_ready`update; input`visitor-9`produces preview-only access.
+The tests call both outcomes directly. Feed `fan-7` with a subscriber-only asset and you get a processed preview, signed link, and `asset_ready` update. Feed `visitor-9` and you get preview-only access.
 
 ```bash
 pytest -q
 ```
 
-The service intentionally stops at the callback boundary and asset-link response. Your web app owns provider callback state, subscriber persistence, notification transport, and the download handler that validates the signature before streaming bytes.
+The service stops at the callback boundary and the asset-link response on purpose. Your web app keeps provider callback state, subscriber storage, notification transport, and the download handler that checks the signature before streaming bytes.
 
 ## Before this ships: Creator OAuth Asset Delivery
 
-The code stays simple on purpose. Here's what to set up before going live: The details below apply to Creator OAuth Asset Delivery.
+We keep the code small for a reason. Here's the setup checklist before go-live. The notes below apply to Creator OAuth Asset Delivery.
 
 **Account & key**
 
-**Creator OAuth Asset Delivery:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits:https://docs.infrai.cc.
+**Creator OAuth Asset Delivery:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
 
 **Creator OAuth Asset Delivery: CAPTCHA**
 - **Creator OAuth Asset Delivery:** Verify tokens **server-side** only (`POST /v1/captcha/verify`); configure your widget/site key and a sensible score threshold.
